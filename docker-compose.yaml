@@ -1,0 +1,268 @@
+version: '3.7'
+
+services:
+  spark-master:
+    container_name: spark-master
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: "6g"
+    build:
+      context: ./sparkMaster/spark/master
+      dockerfile: Dockerfile
+    ports:
+      - "4040:4040"
+      - "7077:7077"
+      - "18080:18080"
+      - "22:22"
+      - "5050:8080"
+    volumes:
+      - ./sparkMaster/submitfiles:/opt/submitfiles
+    networks:
+      dahbest:
+        aliases:
+          - spark-master
+        ipv4_address: 172.80.0.105
+
+  spark-worker-1:
+    container_name: spark-worker-1
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: "6g"
+    build:
+      context: ./sparkMaster/spark/worker
+      dockerfile: Dockerfile
+    depends_on:
+      - spark-master
+    ports:
+      - "8081-8089:8081"
+    volumes:
+      - ./sparkMaster/submitfiles:/opt/submitFiles
+    networks:
+      dahbest:
+        aliases:
+          - spark-worker-1
+        ipv4_address: 172.80.0.111
+
+  spark-worker-2:
+    container_name: spark-worker-2
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: "6g"
+    build:
+      context: ./sparkMaster/spark/worker
+      dockerfile: Dockerfile
+    depends_on:
+      - spark-master
+    ports:
+      - "8081-8089:8081"
+    volumes:
+      - ./sparkMaster/submitfiles:/opt/submitFiles
+    networks:
+      dahbest:
+        aliases:
+          - spark-worker-2
+        ipv4_address: 172.80.0.110
+
+  coordinator:
+    container_name: mn-coordinator
+    image: 'trinodb/trino:422'
+    ports:
+      - "9091:8080"
+    volumes:
+      - ./trino/coordinator:/etc/trino
+      - ./hdfs/hadoop/conf/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./hdfs/hadoop/conf/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
+      - ./trino/coordinator/password_authenticator.properties:/etc/trino/password_authenticator.properties:ro
+      - ./trino/coordinator/password.db:/etc/trino/password.db:ro
+      #- ./trino/coordinator/plugin/snowflake:/usr/lib/trino/plugin/snowflake
+    networks:
+      dahbest:
+        aliases:
+          - coordinator
+
+  worker1:
+    container_name: mn-worker1
+    image: 'trinodb/trino:422'
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./trino/worker:/etc/trino
+      - ./hdfs/hadoop/conf/core-site.xml:/etc/hadoop/conf/core-site.xml:ro
+      - ./hdfs/hadoop/conf/hdfs-site.xml:/etc/hadoop/conf/hdfs-site.xml:ro
+      - ./trino/worker/password_authenticator.properties:/etc/trino/password_authenticator.properties:ro
+      - ./trino/worker/password.db:/etc/trino/password.db:ro
+      #- ./trino/worker/plugin/snowflake:/usr/lib/trino/plugin/snowflake
+    networks:
+      dahbest:
+        aliases:
+          - worker1
+
+  mariadb:
+    container_name: mariadb
+    image: mariadb:10.5.8
+    ports:
+      - 3308:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: test_db
+    volumes:
+      - ./data/mariadb_data:/var/lib/mysql
+    networks:
+      dahbest:
+        aliases:
+          - mariadb
+        ipv4_address: 172.80.0.100
+
+  mongodb:
+    container_name: mongodb
+    hostname: mongodb
+    image: bitnami/mongodb:7.0.2
+    ports:
+      - "27017:27017"
+    environment:
+      MONGODB_ROOT_USER: admin
+      MONGODB_ROOT_PASSWORD: admin
+      MONGODB_USERNAME: cagri
+      MONGODB_PASSWORD: 3541
+      MONGODB_DATABASE: test_db
+      MONGODB_DISABLE_ENFORCE_AUTH: "true"
+    volumes:
+      - ./data/mongodb_data:/bitnami/mongodb
+    networks:
+      dahbest:
+        aliases:
+          - mongodb
+        ipv4_address: 172.80.0.101
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    hostname: namenode
+    environment:
+      - CLUSTER_NAME=test
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip_hostname_check=false
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - ./data/hadoop_namenode:/hadoop/dfs/name
+      - ./hdfs/hadoop/conf:/etc/hadoop/conf
+    networks:
+      dahbest:
+        aliases:
+          - namenode
+        ipv4_address: 172.80.0.102
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    hostname: datanode
+    environment:
+      - CLUSTER_NAME=test
+      - NAMENODE_HOST=namenode
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+      - HDFS_CONF_dfs_datanode_data_dir=file:///hadoop/dfs/data
+    ports:
+      - "9864:9864"
+    volumes:
+      - ./data/hadoop_datanode:/hadoop/dfs/data
+      - ./hdfs/hadoop/conf:/etc/hadoop/conf
+    networks:
+      dahbest:
+        aliases:
+          - datanode
+
+  postgresql:
+    image: docker.io/bitnami/postgresql:15
+    container_name: airflow-database
+    volumes:
+      - ./data/postgresql_data:/bitnami/postgresql
+    environment:
+      - POSTGRESQL_DATABASE=airflowdb
+      - POSTGRESQL_USERNAME=cagri
+      - POSTGRESQL_PASSWORD=3541
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      dahbest:
+        aliases:
+          - postgresql
+
+  airflow-scheduler:
+    image: bitnami/airflow-scheduler:latest
+    container_name: airflow-scheduler
+    environment:
+      - AIRFLOW_DATABASE_NAME=airflowdb
+      - AIRFLOW_DATABASE_USERNAME=cagri
+      - AIRFLOW_DATABASE_PASSWORD=3541
+      - AIRFLOW_EXECUTOR=LocalExecutor
+      - AIRFLOW_WEBSERVER_HOST=airflow 
+    volumes:
+      - ./airflow/dags:/opt/bitnami/airflow/dags
+      - ./airflow/logs:/opt/bitnami/airflow/logs
+      - ./airflow/airflow.cfg:/opt/bitnami/airflow/airflow.cfg
+    depends_on:
+      - postgresql
+      - airflow
+    networks: 
+      dahbest:
+        aliases:
+          - airflow-scheduler
+
+  airflow:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: airflow
+    environment:
+      - AIRFLOW_DATABASE_NAME=airflowdb
+      - AIRFLOW_DATABASE_USERNAME=cagri
+      - AIRFLOW_DATABASE_PASSWORD=3541
+      - AIRFLOW_EXECUTOR=LocalExecutor
+      - AIRFLOW_USERNAME=admin
+      - AIRFLOW_PASSWORD=admin
+      - AIRFLOW_EMAIL=admin@example.com
+      
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./airflow/dags:/opt/bitnami/airflow/dags
+      - ./airflow/logs:/opt/bitnami/airflow/logs
+      - ./airflow/airflow.cfg:/opt/bitnami/airflow/airflow.cfg
+      - ./sparkMaster/submitfiles:/opt/submitfiles
+    depends_on:
+      - spark-master
+    networks: 
+      dahbest:
+        aliases:
+          - airflow
+
+volumes:
+  mariadb_data:
+  pg_data:
+  mongodb_data:
+  hadoop_namenode:
+  hadoop_datanode:
+  submitfiles:
+  postgresql_data:
+  dags:
+  grafana_data:
+  airflow_logs:
+  airflow_dags:
+
+networks:
+  dahbest:
+    name: dahbest
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.80.0.0/16
