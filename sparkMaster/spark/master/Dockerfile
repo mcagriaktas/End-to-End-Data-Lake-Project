@@ -18,8 +18,8 @@ RUN apt-get update -y && \
     apt-get clean
 
 # Install Spark
-RUN curl -o spark-3.5.2-bin-hadoop3.tgz https://dlcdn.apache.org/spark/spark-3.5.2/spark-3.5.2-bin-hadoop3.tgz && \
-    tar -xzvf 3.5.2-bin-hadoop3.tgz && \
+RUN curl -o spark-3.5.2-bin-hadoop3.tgz https://archive.apache.org/dist/spark/spark-3.5.2/spark-3.5.2-bin-hadoop3.tgz && \
+    tar -xzvf spark-3.5.2-bin-hadoop3.tgz && \
     mv spark-3.5.2-bin-hadoop3 /opt/spark && \
     rm -rf spark-3.5.2-bin-hadoop3.tgz
 
